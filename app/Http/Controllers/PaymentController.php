@@ -14,7 +14,7 @@ class PaymentController extends Controller
 {
     public function createTransaction(Request $request)
     {
-        Config::$serverKey = "SB-Mid-server-EXZFf2FEGEW-yjN4oo0ysagB";
+        Config::$serverKey = env("MIDTRANS_SERVER_KEY");;
         Config::$isProduction = false;
         Config::$isSanitized = true;
         Config::$is3ds = true;
@@ -80,7 +80,7 @@ class PaymentController extends Controller
         $grossAmount = $notif->gross_amount;
         $status = $notif->transaction_status;
         $signature = $notif->signature_key;
-        $serverKey = "SB-Mid-server-EXZFf2FEGEW-yjN4oo0ysagB";
+        $serverKey = env("MIDTRANS_SERVER_KEY");
         $mySignature = hash('sha512', $orderId . $status . $grossAmount . $serverKey);
 
         $jsonData = json_encode($notif->getResponse(), JSON_PRETTY_PRINT);
