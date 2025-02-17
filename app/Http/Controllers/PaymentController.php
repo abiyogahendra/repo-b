@@ -7,6 +7,7 @@ use Midtrans\Config;
 use Midtrans\Snap;
 use Midtrans\Notification;
 use GuzzleHttp\Client;
+use Validator;
 
 
 
@@ -14,7 +15,8 @@ class PaymentController extends Controller
 {
     public function createTransaction(Request $request)
     {
-        Config::$serverKey = env("MIDTRANS_SERVER_KEY");;
+        Config::$serverKey = env("MIDTRANS_SERVER_KEY");
+        ;
         Config::$isProduction = false;
         Config::$isSanitized = true;
         Config::$is3ds = true;
@@ -36,6 +38,28 @@ class PaymentController extends Controller
 
     public function createAPITransaction(Request $d)
     {
+        $validator = Validator::make($d->all(), [
+            'payment_type' => 'required|string',
+            'transaction_details' => 'required|array',
+            'transaction_details.order_id' => 'required|string',
+            'transaction_details.gross_amount' => 'required|numeric',
+            'customer_details' => 'required|array',
+            'customer_details.first_name' => 'required|string',
+            'customer_details.email' => 'required|email',
+            'custom_expiry' => 'nullable|array',
+            'custom_expiry.start_time' => 'nullable|date_format:Y-m-d H:i:s',
+            'custom_expiry.duration' => 'nullable|integer',
+            'custom_expiry.unit' => 'nullable|in:minute,hour,day',
+            'metadata' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'error' => true,
+                'message' => $validator->errors()
+            ], 400);
+        }
+
         $client = new Client();
 
         try {
@@ -52,7 +76,7 @@ class PaymentController extends Controller
                 ],
                 'headers' => [
                     'accept' => 'application/json',
-                    'authorization' => 'Basic U0ItTWlkLXNlcnZlci1FWFpGZjJGRUdFVy15ak40b28weXNhZ0I6',
+                    'authorization' => 'Basic ' . env("AUTHORIZATION_MIDTRANS"),
                     'content-type' => 'application/json',
                 ],
             ]);
@@ -64,7 +88,7 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => true,
-                'message' => $e->getMessage()
+                'message' => $e->getMessage()   
             ], 500);
         }
     }
@@ -78,13 +102,28 @@ class PaymentController extends Controller
 
         $orderId = $notif->order_id;
         $grossAmount = $notif->gross_amount;
-        $status = $notif->transaction_status;
+        $status = $notif->status_code;
         $signature = $notif->signature_key;
         $serverKey = env("MIDTRANS_SERVER_KEY");
-        $mySignature = hash('sha512', $orderId . $status . $grossAmount . $serverKey);
+
+        if ($status != 200) {
+            return response()->json([
+                "message" => $notif->status_message
+            ], $status);
+        }
+
+        $mySignature = hash('sha512', $orderId + $status + $grossAmount + $serverKey);
+
+        if ($mySignature != $signature) {
+            return response()->json([
+                'message' => "Signature is not match"
+            ], 403);
+        }
 
         $jsonData = json_encode($notif->getResponse(), JSON_PRETTY_PRINT);
         file_put_contents(storage_path('app/midtrans_webhook.json'), $jsonData);
-        return response()->json(['message' => 'Webhook processed and saved'], 200);
+        return response()->json([
+            'message' => 'Webhook processed and saved'
+        ], 200);
     }
 }
